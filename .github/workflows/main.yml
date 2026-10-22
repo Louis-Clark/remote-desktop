@@ -9,13 +9,6 @@ jobs:
     timeout-minutes: 25
 
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-
-      - name: Build noVNC desktop image
-        run: |
-          docker build -t prbinu/novnc-desktop -f Dockerfile .
-
       - name: Run noVNC desktop
         run: |
           docker run -d --rm \
@@ -45,6 +38,6 @@ jobs:
           wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
           sudo dpkg -i cloudflared-linux-amd64.deb
 
-      - name: Start Cloudflare quick tunnel
+      - name: Start Cloudflare Quick Tunnel
         run: |
           cloudflared tunnel --url http://localhost:8080 --no-autoupdate
