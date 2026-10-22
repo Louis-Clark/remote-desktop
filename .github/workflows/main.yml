@@ -1,0 +1,50 @@
+name: Browser Desktop
+
+on:
+  workflow_dispatch:
+
+jobs:
+  desktop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Build noVNC desktop image
+        run: |
+          docker build -t prbinu/novnc-desktop -f Dockerfile .
+
+      - name: Run noVNC desktop
+        run: |
+          docker run -d --rm \
+            --name desktop \
+            -p 8080:8080 \
+            -e "TZ=America/Los_Angeles" \
+            prbinu/novnc-desktop
+
+      - name: Verify desktop is listening
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8080 >/dev/null; then
+              echo "noVNC is responding"
+              exit 0
+            fi
+            echo "Waiting for app to start... ($i/30)"
+            sleep 10
+          done
+
+          echo "Failed to reach noVNC"
+          docker ps -a
+          docker logs desktop || true
+          exit 1
+
+      - name: Install cloudflared
+        run: |
+          wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+          sudo dpkg -i cloudflared-linux-amd64.deb
+
+      - name: Start Cloudflare quick tunnel
+        run: |
+          cloudflared tunnel --url http://localhost:8080 --no-autoupdate
