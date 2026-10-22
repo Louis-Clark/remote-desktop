@@ -1,5 +1,22 @@
-remote desktop experiment using https://hub.docker.com/r/prbinu/novnc-desktop which is based on https://github.com/prbinu/novnc-desktop full credit for the actual remote desktop goes to them
+Remote Desktop Experiment
+This project is a simple experiment that launches a browser-accessible remote desktop using GitHub Actions.
 
-to use fork this repo and run the Browser Desktop action in the actions tab
+It uses the Docker image from:
 
-feel free to use and contribute to this
+https://hub.docker.com/r/prbinu/novnc-desktop
+Which is based on:
+
+https://github.com/prbinu/novnc-desktop
+Full credit for the actual remote desktop implementation goes to the original project authors.
+
+Usage
+Fork this repository.
+Open the Actions tab.
+Run the Browser Desktop workflow.
+Open the generated Cloudflare tunnel URL.
+Notes
+The desktop is ephemeral and does not persist between workflow runs.
+A new Cloudflare URL is generated for each session.
+This project is intended as an experiment and proof of concept.
+Contributing
+Feel free to use, modify, or contribute to the project.
