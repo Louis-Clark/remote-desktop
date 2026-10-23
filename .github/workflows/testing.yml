@@ -1,53 +1,59 @@
-name: Browser Desktop Testing
+name: Hybrid Codespace-Rendered Desktop
 
 on:
   workflow_dispatch:
 
 jobs:
-  desktop:
+  hybrid-desktop:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
 
     steps:
-      - name: Pull Docker Image Concurrently
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Authenticate GitHub CLI
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | gh auth login --with-token
+
+      - name: 1. Spawn Codespace (The Backend Rendering Engine)
         run: |
-          # Pull the image in the background or cleanly beforehand to separate download time from spin-up
-          docker pull prbinu/novnc-desktop &
+          echo "Spinning up remote Codespace for heavy rendering..."
+          CODESPACE_NAME=$(gh codespace create \
+            --repo ${{ github.repository }} \
+            --branch ${{ github.ref_name }} \
+            --machine standardized_4core \
+            --retention-period 30m \
+            --display-name "Rendering-Backend" \
+            --json name -q ".name")
 
-      - name: Run noVNC desktop
+          echo "CODESPACE_NAME=$CODESPACE_NAME" >> $GITHUB_ENV
+          echo "Waiting for Codespace to boot up..."
+          gh codespace cp -c "$CODESPACE_NAME" -r . /workspaces/repo || true
+
+      - name: 2. Start noVNC Desktop inside the Codespace
         run: |
-          docker run -d --rm \
-            --name desktop \
-            -p 8080:8080 \
-            -e "TZ=America/Los_Angeles" \
-            prbinu/novnc-desktop
+          # Command the Codespace to pull and run your desktop container in the background
+          gh codespace ssh -c "${{ env.CODESPACE_NAME }}" -- \
+            "docker run -d --rm --name desktop -p 8080:8080 -e 'TZ=America/Los_Angeles' prbinu/novnc-desktop"
 
-      - name: Wait for Docker pull to finish (if still running)
-        run: wait
-
-      - name: Verify desktop is listening with faster polling
+      - name: 3. Establish Port Forwarding from Codespace to Actions Runner
         run: |
-          for i in $(seq 1 15); do
-            if curl -fsS http://localhost:8080 >/dev/null; then
-              echo "noVNC is responding instantly!"
-              exit 0
-            fi
-            echo "Waiting for app to start... ($i/15)"
-            sleep 2
-          done
+          # Background port forward: maps Codespace port 8080 to localhost:8080 on the Actions runner
+          gh codespace ports forward 8080:8080 -c "${{ env.CODESPACE_NAME }}" &
+          
+          # Give the port forward a moment to bind
+          sleep 5
 
-          echo "Failed to reach noVNC"
-          docker ps -a
-          docker logs desktop || true
-          exit 1
-
-      - name: Install cloudflared efficiently
+      - name: 4. Start Cloudflare Tunnel (The Public Frontend Gateway)
         run: |
-          # Use curl with a direct stream instead of wget to save disk write cycles
+          # Install cloudflared on the Actions runner
           curl -L --output cloudflared-linux-amd64.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
           sudo dpkg -i cloudflared-linux-amd64.deb
           rm cloudflared-linux-amd64.deb
 
-      - name: Start Cloudflare Quick Tunnel
-        run: |
+          echo "===================================================="
+          echo "LAUNCHING PUBLIC GATEWAY URL..."
+          echo "===================================================="
+          
+          # Tunnel the local port (which is securely piped from the Codespace backend)
           cloudflared tunnel --url http://localhost:8080 --no-autoupdate
