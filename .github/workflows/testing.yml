@@ -6,10 +6,8 @@ on:
 jobs:
   desktop:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
-
     env:
-      GH_TOKEN: ${{ secrets.GH_CODESPACE_TOKEN }}
+      GH_CODESPACE_TOKEN: ${{ secrets.GH_CODESPACE_TOKEN }}
       CODESPACE_NAME: desktop-${{ github.run_id }}
 
     steps:
@@ -27,7 +25,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo "${GH_TOKEN}" | gh auth login --with-token
+          unset GH_TOKEN
+          echo "${GH_CODESPACE_TOKEN}" | gh auth login --with-token
 
       - name: Reuse or create Codespace
         shell: bash
