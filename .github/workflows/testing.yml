@@ -1,0 +1,59 @@
+name: Browser Desktop
+
+on:
+  workflow_dispatch:
+
+jobs:
+  desktop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Maximize Build Space & Clean Runner
+        run: |
+          # Free up disk space by removing unused pre-installed tools (Android SDKs, .NET, large packages)
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost /$_JAVA_HOME
+          df -h
+
+      - name: Pull Docker Image Concurrently
+        run: |
+          # Pull the image in the background or cleanly beforehand to separate download time from spin-up
+          docker pull prbinu/novnc-desktop &
+
+      - name: Run noVNC desktop
+        run: |
+          docker run -d --rm \
+            --name desktop \
+            -p 8080:8080 \
+            -e "TZ=America/Los_Angeles" \
+            prbinu/novnc-desktop
+
+      - name: Wait for Docker pull to finish (if still running)
+        run: wait
+
+      - name: Verify desktop is listening with faster polling
+        run: |
+          for i in $(seq 1 15); do
+            if curl -fsS http://localhost:8080 >/dev/null; then
+              echo "noVNC is responding instantly!"
+              exit 0
+            fi
+            echo "Waiting for app to start... ($i/15)"
+            sleep 2
+          done
+
+          echo "Failed to reach noVNC"
+          docker ps -a
+          docker logs desktop || true
+          exit 1
+
+      - name: Install cloudflared efficiently
+        run: |
+          # Use curl with a direct stream instead of wget to save disk write cycles
+          curl -L --output cloudflared-linux-amd64.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+          sudo dpkg -i cloudflared-linux-amd64.deb
+          rm cloudflared-linux-amd64.deb
+
+      - name: Start Cloudflare Quick Tunnel
+        run: |
+          cloudflared tunnel --url http://localhost:8080 --no-autoupdate
