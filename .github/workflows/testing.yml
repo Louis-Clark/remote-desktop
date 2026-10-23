@@ -9,12 +9,6 @@ jobs:
     timeout-minutes: 25
 
     steps:
-        - name: Maximize Build Space & Clean Runner
-        run: |
-          # Safely remove unused pre-installed tools without risking the root directory
-          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost
-          df -h
-
       - name: Pull Docker Image Concurrently
         run: |
           # Pull the image in the background or cleanly beforehand to separate download time from spin-up
