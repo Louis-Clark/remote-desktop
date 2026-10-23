@@ -9,10 +9,10 @@ jobs:
     timeout-minutes: 25
 
     steps:
-      - name: Maximize Build Space & Clean Runner
+        - name: Maximize Build Space & Clean Runner
         run: |
-          # Free up disk space by removing unused pre-installed tools (Android SDKs, .NET, large packages)
-          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost /$_JAVA_HOME
+          # Safely remove unused pre-installed tools without risking the root directory
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost
           df -h
 
       - name: Pull Docker Image Concurrently
