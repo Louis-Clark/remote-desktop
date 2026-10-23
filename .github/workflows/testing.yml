@@ -15,18 +15,20 @@ jobs:
       - name: Authenticate GitHub CLI
         run: echo "${{ secrets.GITHUB_TOKEN }}" | gh auth login --with-token
 
-      - name: 1. Spawn Codespace (The Backend Rendering Engine)
+      - - name: 1. Spawn Codespace (The Backend Rendering Engine)
         run: |
           echo "Spinning up remote Codespace for heavy rendering..."
           
-          # Create the codespace cleanly without flag crashes
-          gh codespace create --repo ${{ github.repository }} --yes
+          # Give it a deterministic display name so we know exactly what to call it
+          CODESPACE_NAME="desktop-backend-${{ github.run_id }}"
           
-          # Safely query the exact name of the newly created codespace
-          CODESPACE_NAME=$(gh codespace list --limit 1 --json name -q ".[0].name")
+          gh codespace create \
+            --repo ${{ github.repository }} \
+            --display-name "$CODESPACE_NAME" \
+            --default-permissions
 
           echo "CODESPACE_NAME=$CODESPACE_NAME" >> $GITHUB_ENV
-          echo "Successfully bound to Codespace: $CODESPACE_NAME"
+          echo "Successfully spawned Codespace: $CODESPACE_NAME"
           
           echo "Waiting for Codespace to boot up..."
           gh codespace cp -c "$CODESPACE_NAME" -r . /workspaces/repo || true
