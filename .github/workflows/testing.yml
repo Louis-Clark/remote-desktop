@@ -18,12 +18,18 @@ jobs:
       - name: 1. Spawn Codespace (The Backend Rendering Engine)
         run: |
           echo "Spinning up remote Codespace for heavy rendering..."
-          CODESPACE_NAME=$(gh codespace create--json name -q ".name")
+          
+          # Create the codespace cleanly without flag crashes
+          gh codespace create --repo ${{ github.repository }} --yes
+          
+          # Safely query the exact name of the newly created codespace
+          CODESPACE_NAME=$(gh codespace list --limit 1 --json name -q ".[0].name")
 
           echo "CODESPACE_NAME=$CODESPACE_NAME" >> $GITHUB_ENV
+          echo "Successfully bound to Codespace: $CODESPACE_NAME"
+          
           echo "Waiting for Codespace to boot up..."
           gh codespace cp -c "$CODESPACE_NAME" -r . /workspaces/repo || true
-
       - name: 2. Start noVNC Desktop inside the Codespace
         run: |
           # Command the Codespace to pull and run your desktop container in the background
