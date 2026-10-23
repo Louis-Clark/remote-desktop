@@ -1,23 +1,27 @@
-name: Hybrid Codespace-Rendered Desktop
+name: Codespace noVNC Desktop
 
 on:
   workflow_dispatch:
 
-permissions:
-  contents: read
-  codespaces: write
-
 jobs:
-  hybrid-desktop:
+  desktop:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 35
+
     env:
-      GH_TOKEN: ${{ github.token }}
-      CODESPACE_NAME: desktop-backend-${{ github.run_id }}
+      GH_TOKEN: ${{ secrets.GH_CODESPACE_TOKEN }}
+      CODESPACE_NAME: desktop-${{ github.run_id }}
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Install GitHub CLI
+        run: |
+          type -p gh >/dev/null || {
+            sudo apt-get update
+            sudo apt-get install -y gh
+          }
 
       - name: Authenticate GitHub CLI
         shell: bash
@@ -25,34 +29,46 @@ jobs:
           set -euo pipefail
           echo "${GH_TOKEN}" | gh auth login --with-token
 
-      - name: 1. Spawn Codespace
+      - name: Reuse or create Codespace
         shell: bash
         run: |
           set -euo pipefail
-          echo "Creating Codespace..."
-          gh codespace create \
-            --repo "${{ github.repository }}" \
-            --display-name "${CODESPACE_NAME}" \
-            --machine basicLinux32gb \
-            --default-permissions \
-            --wait
 
-          echo "CODESPACE_NAME=${CODESPACE_NAME}" >> "$GITHUB_ENV"
+          # Try to reuse an active codespace first
+          existing=$(gh codespace list --json name,state --jq '.[] | select(.state=="Available") | .name' | head -n 1 || true)
 
-      - name: 2. Start noVNC Desktop inside the Codespace
+          if [ -n "${existing}" ]; then
+            echo "Using existing codespace: ${existing}"
+            echo "CODESPACE_NAME=${existing}" >> "$GITHUB_ENV"
+          else
+            echo "Creating a new codespace for this repo..."
+            gh codespace create \
+              --repo "${{ github.repository }}" \
+              --display-name "${CODESPACE_NAME}" \
+              --machine basicLinux32gb \
+              --default-permissions \
+              --wait \
+              --json name \
+              --jq '.name' > /tmp/codespace_name.txt
+
+            echo "CODESPACE_NAME=$(cat /tmp/codespace_name.txt)" >> "$GITHUB_ENV"
+          fi
+
+      - name: Start noVNC desktop in Codespace
         shell: bash
         run: |
           set -euo pipefail
-          gh codespace ssh -c "${{ env.CODESPACE_NAME }}" -- \
+          gh codespace ssh -c "${CODESPACE_NAME}" -- \
             'docker run -d --rm --name desktop -p 8080:8080 -e TZ=America/Los_Angeles prbinu/novnc-desktop'
 
-      - name: 3. Forward the Codespace port to the runner
+      - name: Forward Codespace port to runner
         shell: bash
         run: |
           set -euo pipefail
-          gh codespace ports forward 8080:8080 -c "${{ env.CODESPACE_NAME }}" >/tmp/codespace-ports.log 2>&1 &
+          gh codespace ports forward 8080:8080 -c "${CODESPACE_NAME}" >/tmp/codespace-ports.log 2>&1 &
+          sleep 10
 
-          for i in {1..30}; do
+          for i in $(seq 1 30); do
             if curl -fsS http://127.0.0.1:8080 >/dev/null 2>&1; then
               echo "Desktop is reachable on localhost:8080"
               exit 0
@@ -60,24 +76,22 @@ jobs:
             sleep 5
           done
 
-          echo "Desktop did not become reachable"
+          echo "noVNC never became reachable"
           cat /tmp/codespace-ports.log || true
+          gh codespace logs -c "${CODESPACE_NAME}" || true
           exit 1
 
-      - name: 4. Install Cloudflare tunnel client
+      - name: Install Cloudflare tunnel
         shell: bash
         run: |
           set -euo pipefail
-          curl -fsSL \
-            -o /tmp/cloudflared.deb \
+          curl -fsSL -o /tmp/cloudflared.deb \
             https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
           sudo dpkg -i /tmp/cloudflared.deb
-          rm -f /tmp/cloudflared.deb
 
-      - name: 5. Start Cloudflare quick tunnel
+      - name: Start Quick Tunnel
         shell: bash
         run: |
           set -euo pipefail
-          echo "Launching Cloudflare quick tunnel..."
-          echo "This should print a public URL in the logs."
+          echo "Opening public tunnel to the forwarded Codespace port..."
           cloudflared tunnel --url http://127.0.0.1:8080 --no-autoupdate
