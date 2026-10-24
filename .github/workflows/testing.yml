@@ -6,6 +6,11 @@ on:
 jobs:
   desktop:
     runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    permissions:
+      contents: read
+
     env:
       GH_CODESPACE_TOKEN: ${{ secrets.GH_CODESPACE_TOKEN }}
       CODESPACE_NAME: desktop-${{ github.run_id }}
@@ -15,16 +20,23 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install GitHub CLI
+        shell: bash
         run: |
-          type -p gh >/dev/null || {
+          set -euo pipefail
+          if ! command -v gh >/dev/null 2>&1; then
             sudo apt-get update
             sudo apt-get install -y gh
-          }
+          fi
 
       - name: Authenticate GitHub CLI
         shell: bash
         run: |
           set -euo pipefail
+          if [ -z "${GH_CODESPACE_TOKEN:-}" ]; then
+            echo "GH_CODESPACE_TOKEN is not set"
+            exit 1
+          fi
+
           unset GH_TOKEN
           echo "${GH_CODESPACE_TOKEN}" | gh auth login --with-token
 
@@ -33,7 +45,6 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Try to reuse an active codespace first
           existing=$(gh codespace list --json name,state --jq '.[] | select(.state=="Available") | .name' | head -n 1 || true)
 
           if [ -n "${existing}" ]; then
@@ -46,12 +57,36 @@ jobs:
               --display-name "${CODESPACE_NAME}" \
               --machine basicLinux32gb \
               --default-permissions \
-              --wait \
-              --json name \
+              --json name,state \
               --jq '.name' > /tmp/codespace_name.txt
+
+            if [ ! -s /tmp/codespace_name.txt ]; then
+              echo "Codespace creation returned no name"
+              gh codespace list --json name,state || true
+              exit 1
+            fi
 
             echo "CODESPACE_NAME=$(cat /tmp/codespace_name.txt)" >> "$GITHUB_ENV"
           fi
+
+      - name: Wait for Codespace to be ready
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          for i in $(seq 1 30); do
+            state=$(gh codespace list --json name,state --jq --arg name "${CODESPACE_NAME}" '.[] | select(.name==$name) | .state' || true)
+            if [ "${state}" = "Available" ]; then
+              echo "${CODESPACE_NAME} is available"
+              exit 0
+            fi
+            echo "Waiting for codespace ${CODESPACE_NAME} to become available... (${i}/30)"
+            sleep 15
+          done
+
+          echo "Codespace ${CODESPACE_NAME} did not become available"
+          gh codespace list --json name,state || true
+          exit 1
 
       - name: Start noVNC desktop in Codespace
         shell: bash
@@ -93,4 +128,6 @@ jobs:
         run: |
           set -euo pipefail
           echo "Opening public tunnel to the forwarded Codespace port..."
-          cloudflared tunnel --url http://127.0.0.1:8080 --no-autoupdate
+          nohup cloudflared tunnel --url http://127.0.0.1:8080 --no-autoupdate >/tmp/cloudflared.log 2>&1 &
+          sleep 10
+          tail -n 50 /tmp/cloudflared.log || true
