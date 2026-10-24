@@ -45,7 +45,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          existing=$(gh codespace list --json name,state --jq '.[] | select(.state=="Available") | .name' | head -n 1 || true)
+          existing=$(gh codespace list --json name,state,displayName --jq --arg d "${CODESPACE_NAME}" '.[] | select(.state=="Available" and .displayName==$d) | .name' | head -n 1 || true)
 
           if [ -n "${existing}" ]; then
             echo "Using existing codespace: ${existing}"
@@ -57,16 +57,21 @@ jobs:
               --display-name "${CODESPACE_NAME}" \
               --machine basicLinux32gb \
               --default-permissions \
-              --json name,state \
-              --jq '.name' > /tmp/codespace_name.txt
+              >/tmp/codespace-create.log 2>&1 || {
+                cat /tmp/codespace-create.log || true
+                echo "Codespace creation failed"
+                exit 1
+              }
 
-            if [ ! -s /tmp/codespace_name.txt ]; then
-              echo "Codespace creation returned no name"
-              gh codespace list --json name,state || true
+            created=$(gh codespace list --json name,state,displayName --jq --arg d "${CODESPACE_NAME}" '.[] | select(.state!="Deleted" and .displayName==$d) | .name' | head -n 1 || true)
+
+            if [ -z "${created}" ]; then
+              echo "Could not determine newly created codespace name"
+              gh codespace list --json name,state,displayName || true
               exit 1
             fi
 
-            echo "CODESPACE_NAME=$(cat /tmp/codespace_name.txt)" >> "$GITHUB_ENV"
+            echo "CODESPACE_NAME=${created}" >> "$GITHUB_ENV"
           fi
 
       - name: Wait for Codespace to be ready
@@ -85,7 +90,7 @@ jobs:
           done
 
           echo "Codespace ${CODESPACE_NAME} did not become available"
-          gh codespace list --json name,state || true
+          gh codespace list --json name,state,displayName || true
           exit 1
 
       - name: Start noVNC desktop in Codespace
