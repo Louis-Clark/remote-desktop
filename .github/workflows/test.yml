@@ -20,7 +20,7 @@ jobs:
       - name: Verify Webtop is listening
         run: |
           for i in $(seq 1 30); do
-            if curl -kfsS https://localhost:3001 >/dev/null; then
+            if curl -kfsS http://localhost:3001 >/dev/null; then
               echo "Webtop is responding"
               exit 0
             fi
