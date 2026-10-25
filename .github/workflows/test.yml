@@ -1,0 +1,46 @@
+name: Webtop Desktop
+
+on:
+  workflow_dispatch:
+
+jobs:
+  desktop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+
+    steps:
+      - name: Start Webtop
+        run: |
+          docker run -d \
+            --name webtop \
+            -p 3000:3000 \
+            -e TZ=Europe/London \
+            lscr.io/linuxserver/webtop:ubuntu-xfce
+
+      - name: Verify Webtop is listening
+        run: |
+          for i in $(seq 1 30); do
+            if curl -kfsS https://localhost:3000 >/dev/null; then
+              echo "Webtop is responding"
+              exit 0
+            fi
+
+            echo "Waiting for Webtop... ($i/30)"
+            sleep 10
+          done
+
+          echo "Failed to reach Webtop"
+          docker ps -a
+          docker logs webtop || true
+          exit 1
+
+      - name: Install cloudflared
+        run: |
+          wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+          sudo dpkg -i cloudflared-linux-amd64.deb
+
+      - name: Start Cloudflare Quick Tunnel
+        run: |
+          cloudflared tunnel \
+            --url https://localhost:3000 \
+            --no-autoupdate
